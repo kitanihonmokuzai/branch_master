@@ -9,6 +9,7 @@ export default function Nav({ title }) {
       <nav className="nav">
         <Link href="/">回一覧</Link>
         <Link href="/trends">推移グラフ</Link>
+        <Link href="/branches">枝番表の編集</Link>
       </nav>
     </div>
   );

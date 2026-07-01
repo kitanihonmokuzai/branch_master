@@ -14,6 +14,8 @@ import {
 import { supabase } from "../../lib/supabaseClient";
 import Nav from "../../components/Nav";
 
+export const dynamic = "force-dynamic";
+
 const LINE_COLORS = [
   "#7a5c3e",
   "#4c7a4f",

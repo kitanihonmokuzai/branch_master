@@ -34,9 +34,13 @@ function isVolumeValid(v) {
   return !Number.isNaN(n) && n >= 0;
 }
 
+function toVerticalFriendly(text) {
+  return String(text || "").replace(/\(/g, "（").replace(/\)/g, "）");
+}
+
 function BranchAxisTick({ x, y, payload, nameMap }) {
   const no = payload.value;
-  const name = nameMap[no] || "";
+  const name = toVerticalFriendly(nameMap[no] || "");
   return (
     <g transform={`translate(${x},${y})`}>
       <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fill="#2b2620">
@@ -207,6 +211,7 @@ export default function MarketDetailPage({ params }) {
       market_id: marketId,
       branch_no: Number(r.branch_no),
       volume: Number(r.volume),
+      branch_name_snapshot: branchMap[Number(r.branch_no)] || null,
     }));
     const { error } = await supabase.from("entries").insert(payload);
     setSavingBatch(false);
@@ -243,7 +248,11 @@ export default function MarketDetailPage({ params }) {
       const matched = entries.filter((e) => e.branch_no === no);
       const count = matched.length;
       const total = matched.reduce((sum, e) => sum + Number(e.volume || 0), 0);
-      rows.push({ branch_no: no, name: branchMap[no] || "", count, total });
+      const name =
+        (matched[0] && (matched[0].branch_name_snapshot || branchMap[no])) ||
+        branchMap[no] ||
+        "";
+      rows.push({ branch_no: no, name, count, total });
     }
     return rows;
   }, [entries, branchMap]);
@@ -422,7 +431,7 @@ export default function MarketDetailPage({ params }) {
                   {filteredEntries.map((e) => (
                     <tr key={e.id}>
                       <td>{String(e.branch_no).padStart(2, "0")}</td>
-                      <td>{branchMap[e.branch_no] || ""}</td>
+                      <td>{e.branch_name_snapshot || branchMap[e.branch_no] || ""}</td>
                       <td>{Number(e.volume).toFixed(3)}</td>
                       <td>
                         <button className="secondary" onClick={() => handleDelete(e.id)}>
