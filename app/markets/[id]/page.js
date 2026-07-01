@@ -13,9 +13,11 @@ import {
 import { supabase } from "../../../lib/supabaseClient";
 import Nav from "../../../components/Nav";
 
-function branchLabel(no, branchMap) {
-  const n = branchMap[no];
-  return n ? `${String(no).padStart(2, "0")} ${n}` : String(no).padStart(2, "0");
+export const dynamic = "force-dynamic";
+
+function makeEmptyRow(idRef) {
+  idRef.current += 1;
+  return { key: idRef.current, branch_no: "", volume: "" };
 }
 
 export default function MarketDetailPage({ params }) {
@@ -27,11 +29,10 @@ export default function MarketDetailPage({ params }) {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const [branchNo, setBranchNo] = useState("");
-  const [volume, setVolume] = useState("");
-  const [touched, setTouched] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const volumeRef = useRef(null);
+  const idRef = useRef(0);
+  const [draftRows, setDraftRows] = useState(() => [makeEmptyRow(idRef)]);
+  const [savingBatch, setSavingBatch] = useState(false);
+  const branchRefs = useRef({});
 
   const branchMap = useMemo(() => {
     const m = {};
@@ -79,40 +80,75 @@ export default function MarketDetailPage({ params }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marketId]);
 
-  const branchMissing = touched && branchNo === "";
-  const volumeMissing = touched && (volume === "" || Number.isNaN(Number(volume)));
-
-  async function handleAdd(e) {
-    e.preventDefault();
-    setTouched(true);
-
-    if (branchNo === "" || volume === "" || Number.isNaN(Number(volume))) {
-      setErrorMsg("枝番号と材積の両方を入力してください。片方だけの入力は登録できません。");
-      return;
+  // 最終行の両方が埋まったら自動で次の空行を追加する（スプレッドシート的な連続入力）
+  useEffect(() => {
+    const last = draftRows[draftRows.length - 1];
+    if (last && last.branch_no !== "" && last.volume !== "") {
+      const newRow = makeEmptyRow(idRef);
+      setDraftRows((rows) => [...rows, newRow]);
+      // 次の行の枝番号セレクトへフォーカスを移す
+      setTimeout(() => {
+        const el = branchRefs.current[newRow.key];
+        if (el) el.focus();
+      }, 0);
     }
-    if (Number(volume) < 0) {
-      setErrorMsg("材積は0以上の数値で入力してください。");
-      return;
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRows]);
 
-    setErrorMsg("");
-    setSaving(true);
-    const { error } = await supabase.from("entries").insert({
-      market_id: marketId,
-      branch_no: Number(branchNo),
-      volume: Number(volume),
+  function updateDraftRow(key, field, value) {
+    setDraftRows((rows) =>
+      rows.map((r) => (r.key === key ? { ...r, [field]: value } : r))
+    );
+  }
+
+  function removeDraftRow(key) {
+    setDraftRows((rows) => {
+      const next = rows.filter((r) => r.key !== key);
+      return next.length === 0 ? [makeEmptyRow(idRef)] : next;
     });
-    setSaving(false);
+  }
+
+  const rowsToSave = draftRows.filter(
+    (r) => r.branch_no !== "" && r.volume !== ""
+  );
+  const incompleteRows = draftRows.filter(
+    (r) => (r.branch_no === "") !== (r.volume === "")
+  );
+
+  async function handleSaveBatch() {
+    setErrorMsg("");
+
+    if (incompleteRows.length > 0) {
+      setErrorMsg(
+        `枝番号・材積の片方だけ入力されている行が${incompleteRows.length}件あります。赤くハイライトされた行を修正するか削除してから保存してください。`
+      );
+      return;
+    }
+    if (rowsToSave.length === 0) {
+      setErrorMsg("保存する行がありません。枝番号と材積を入力してください。");
+      return;
+    }
+
+    setSavingBatch(true);
+    const payload = rowsToSave.map((r) => ({
+      market_id: marketId,
+      branch_no: Number(r.branch_no),
+      volume: Number(r.volume),
+    }));
+    const { error } = await supabase.from("entries").insert(payload);
+    setSavingBatch(false);
 
     if (error) {
-      setErrorMsg("登録に失敗しました: " + error.message);
+      setErrorMsg("保存に失敗しました: " + error.message);
       return;
     }
 
-    // 枝番号はそのまま残して連続入力しやすくし、材積だけクリアする
-    setVolume("");
-    setTouched(false);
-    volumeRef.current && volumeRef.current.focus();
+    const freshRow = makeEmptyRow(idRef);
+    setDraftRows([freshRow]);
+    setTimeout(() => {
+      const el = branchRefs.current[freshRow.key];
+      if (el) el.focus();
+    }, 0);
     load();
   }
 
@@ -179,43 +215,78 @@ export default function MarketDetailPage({ params }) {
 
       <div className="panel">
         <h2>物件入力</h2>
-        <form className="row" onSubmit={handleAdd}>
-          <div className="field">
-            <label>枝番号</label>
-            <select
-              className={branchMissing ? "invalid" : ""}
-              value={branchNo}
-              onChange={(e) => setBranchNo(e.target.value)}
-            >
-              <option value="">選択してください</option>
-              {branches.map((b) => (
-                <option key={b.branch_no} value={b.branch_no}>
-                  {String(b.branch_no).padStart(2, "0")} {b.name}
-                </option>
-              ))}
-            </select>
-            {branchMissing && <span className="error-text">枝番号が未選択です</span>}
-          </div>
-          <div className="field">
-            <label>材積 (m3)</label>
-            <input
-              ref={volumeRef}
-              className={volumeMissing ? "invalid" : ""}
-              type="number"
-              step="0.001"
-              min="0"
-              placeholder="例: 1.234"
-              value={volume}
-              onChange={(e) => setVolume(e.target.value)}
-            />
-            {volumeMissing && <span className="error-text">材積が未入力です</span>}
-          </div>
-          <button type="submit" disabled={saving}>
-            {saving ? "登録中..." : "追加"}
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: "55%" }}>枝番号</th>
+              <th>材積 (m3)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {draftRows.map((r) => {
+              const isIncomplete = (r.branch_no === "") !== (r.volume === "");
+              return (
+                <tr key={r.key} className={isIncomplete ? "missing-row" : ""}>
+                  <td>
+                    <select
+                      ref={(el) => {
+                        branchRefs.current[r.key] = el;
+                      }}
+                      className={isIncomplete && r.branch_no === "" ? "invalid" : ""}
+                      value={r.branch_no}
+                      onChange={(e) =>
+                        updateDraftRow(r.key, "branch_no", e.target.value)
+                      }
+                    >
+                      <option value="">選択してください</option>
+                      {branches.map((b) => (
+                        <option key={b.branch_no} value={b.branch_no}>
+                          {String(b.branch_no).padStart(2, "0")} {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      className={isIncomplete && r.volume === "" ? "invalid" : ""}
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      placeholder="例: 1.234"
+                      value={r.volume}
+                      onChange={(e) =>
+                        updateDraftRow(r.key, "volume", e.target.value)
+                      }
+                    />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => removeDraftRow(r.key)}
+                    >
+                      削除
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="row" style={{ marginTop: 14 }}>
+          <button type="button" onClick={handleSaveBatch} disabled={savingBatch}>
+            {savingBatch ? "保存中..." : `まとめて保存（${rowsToSave.length}件）`}
           </button>
-        </form>
+          {incompleteRows.length > 0 && (
+            <span className="error-text">
+              片方だけ入力されている行が{incompleteRows.length}件あります
+            </span>
+          )}
+        </div>
         <p className="muted" style={{ marginTop: 10 }}>
-          枝番号・材積の両方を入力しないと登録できません（片方だけの入力ミスを防止します）。登録後は枝番号を保持したまま材積欄がクリアされるので、同じ枝番が続く場合はそのまま連続入力できます。
+          枝番号と材積を入力すると自動で次の行が追加されるので、連続して入力を続けられます。片方だけ入力された行は赤くハイライトされ、そのままでは保存できません。入力が終わったら「まとめて保存」を押してください。
         </p>
       </div>
 
