@@ -34,6 +34,28 @@ function isVolumeValid(v) {
   return !Number.isNaN(n) && n >= 0;
 }
 
+function BranchAxisTick({ x, y, payload, nameMap }) {
+  const no = payload.value;
+  const name = nameMap[no] || "";
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fill="#2b2620">
+        {no}
+      </text>
+      <text
+        x={0}
+        y={18}
+        textAnchor="start"
+        fontSize={10}
+        fill="#7a7264"
+        style={{ writingMode: "vertical-rl" }}
+      >
+        {name}
+      </text>
+    </g>
+  );
+}
+
 export default function MarketDetailPage({ params }) {
   const marketId = params.id;
 
@@ -232,9 +254,14 @@ export default function MarketDetailPage({ params }) {
   const chartData = summary
     .filter((r) => r.total > 0)
     .map((r) => ({
-      label: `${String(r.branch_no).padStart(2, "0")} ${r.name}`,
+      no: String(r.branch_no).padStart(2, "0"),
+      name: r.name,
       材積: Number(r.total.toFixed(3)),
     }));
+  const chartNameMap = {};
+  chartData.forEach((d) => {
+    chartNameMap[d.no] = d.name;
+  });
 
   if (loading) {
     return (
@@ -445,13 +472,21 @@ export default function MarketDetailPage({ params }) {
         {chartData.length === 0 ? (
           <p className="muted">グラフ表示するデータがありません。</p>
         ) : (
-          <div style={{ width: "100%", height: 380 }}>
+          <div style={{ width: "100%", height: 400 }}>
             <ResponsiveContainer>
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2ddd3" />
-                <XAxis dataKey="label" fontSize={11} angle={-35} textAnchor="end" height={70} interval={0} />
+                <XAxis
+                  dataKey="no"
+                  height={100}
+                  interval={0}
+                  tick={(props) => <BranchAxisTick {...props} nameMap={chartNameMap} />}
+                />
                 <YAxis fontSize={12} />
-                <Tooltip />
+                <Tooltip
+                  formatter={(value) => [`${value} m3`, "材積"]}
+                  labelFormatter={(no) => `${no} ${chartNameMap[no] || ""}`}
+                />
                 <Bar dataKey="材積" fill="#7a5c3e" />
               </BarChart>
             </ResponsiveContainer>
