@@ -48,7 +48,7 @@ function BranchAxisTick({ x, y, payload, nameMap }) {
         textAnchor="start"
         fontSize={10}
         fill="#7a7264"
-        style={{ writingMode: "vertical-rl" }}
+        style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
       >
         {name}
       </text>
