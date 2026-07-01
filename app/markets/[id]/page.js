@@ -115,9 +115,20 @@ export default function MarketDetailPage({ params }) {
     }, 0);
   }
 
+  function padBranch(rowKey) {
+    setDraftRows((rows) =>
+      rows.map((r) => {
+        if (r.key !== rowKey) return r;
+        if (!isBranchValid(r.branch_no)) return r;
+        return { ...r, branch_no: String(Number(r.branch_no)).padStart(2, "0") };
+      })
+    );
+  }
+
   function handleBranchKeyDown(rowKey, e) {
     if (e.key !== "Enter") return;
     e.preventDefault();
+    padBranch(rowKey);
     focusRow(rowKey, "volume");
   }
 
@@ -287,6 +298,7 @@ export default function MarketDetailPage({ params }) {
                         updateDraftRow(r.key, "branch_no", e.target.value.trim())
                       }
                       onKeyDown={(e) => handleBranchKeyDown(r.key, e)}
+                      onBlur={() => padBranch(r.key)}
                     />
                   </td>
                   <td className="muted">{nameForRow}</td>
