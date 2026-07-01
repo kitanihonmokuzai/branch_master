@@ -20,6 +20,20 @@ function makeEmptyRow(idRef) {
   return { key: idRef.current, branch_no: "", volume: "" };
 }
 
+function isBranchValid(v) {
+  if (v === "") return false;
+  if (!/^\d{1,2}$/.test(v)) return false;
+  const n = Number(v);
+  return n >= 0 && n <= 49;
+}
+
+function isVolumeValid(v) {
+  if (v === "") return false;
+  if (!/^\d*\.?\d*$/.test(v)) return false; // ".333" のような入力も許可
+  const n = Number(v);
+  return !Number.isNaN(n) && n >= 0;
+}
+
 export default function MarketDetailPage({ params }) {
   const marketId = params.id;
 
@@ -33,6 +47,7 @@ export default function MarketDetailPage({ params }) {
   const [draftRows, setDraftRows] = useState(() => [makeEmptyRow(idRef)]);
   const [savingBatch, setSavingBatch] = useState(false);
   const branchRefs = useRef({});
+  const volumeRefs = useRef({});
 
   const branchMap = useMemo(() => {
     const m = {};
@@ -80,21 +95,6 @@ export default function MarketDetailPage({ params }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marketId]);
 
-  // 最終行の両方が埋まったら自動で次の空行を追加する（スプレッドシート的な連続入力）
-  useEffect(() => {
-    const last = draftRows[draftRows.length - 1];
-    if (last && last.branch_no !== "" && last.volume !== "") {
-      const newRow = makeEmptyRow(idRef);
-      setDraftRows((rows) => [...rows, newRow]);
-      // 次の行の枝番号セレクトへフォーカスを移す
-      setTimeout(() => {
-        const el = branchRefs.current[newRow.key];
-        if (el) el.focus();
-      }, 0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftRows]);
-
   function updateDraftRow(key, field, value) {
     setDraftRows((rows) =>
       rows.map((r) => (r.key === key ? { ...r, [field]: value } : r))
@@ -108,19 +108,57 @@ export default function MarketDetailPage({ params }) {
     });
   }
 
+  function focusRow(key, target) {
+    setTimeout(() => {
+      const el = target === "branch" ? branchRefs.current[key] : volumeRefs.current[key];
+      if (el) el.focus();
+    }, 0);
+  }
+
+  function handleBranchKeyDown(rowKey, e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    focusRow(rowKey, "volume");
+  }
+
+  function handleVolumeKeyDown(rowKey, e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+
+    const row = draftRows.find((r) => r.key === rowKey);
+    if (!row) return;
+
+    if (!isBranchValid(row.branch_no) || !isVolumeValid(row.volume)) {
+      setErrorMsg("枝番号（0〜49）と材積の両方を正しく入力してから次に進んでください。");
+      return;
+    }
+    setErrorMsg("");
+
+    const idx = draftRows.findIndex((r) => r.key === rowKey);
+    if (idx === draftRows.length - 1) {
+      const newRow = makeEmptyRow(idRef);
+      setDraftRows((rows) => [...rows, newRow]);
+      focusRow(newRow.key, "branch");
+    } else {
+      focusRow(draftRows[idx + 1].key, "branch");
+    }
+  }
+
   const rowsToSave = draftRows.filter(
-    (r) => r.branch_no !== "" && r.volume !== ""
+    (r) => isBranchValid(r.branch_no) && isVolumeValid(r.volume)
   );
-  const incompleteRows = draftRows.filter(
-    (r) => (r.branch_no === "") !== (r.volume === "")
-  );
+  const incompleteRows = draftRows.filter((r) => {
+    const hasInput = r.branch_no !== "" || r.volume !== "";
+    const complete = isBranchValid(r.branch_no) && isVolumeValid(r.volume);
+    return hasInput && !complete;
+  });
 
   async function handleSaveBatch() {
     setErrorMsg("");
 
     if (incompleteRows.length > 0) {
       setErrorMsg(
-        `枝番号・材積の片方だけ入力されている行が${incompleteRows.length}件あります。赤くハイライトされた行を修正するか削除してから保存してください。`
+        `枝番号・材積が正しく揃っていない行が${incompleteRows.length}件あります。赤くハイライトされた行を修正するか削除してから保存してください。`
       );
       return;
     }
@@ -145,10 +183,7 @@ export default function MarketDetailPage({ params }) {
 
     const freshRow = makeEmptyRow(idRef);
     setDraftRows([freshRow]);
-    setTimeout(() => {
-      const el = branchRefs.current[freshRow.key];
-      if (el) el.focus();
-    }, 0);
+    focusRow(freshRow.key, "branch");
     load();
   }
 
@@ -218,46 +253,57 @@ export default function MarketDetailPage({ params }) {
         <table>
           <thead>
             <tr>
-              <th style={{ width: "55%" }}>枝番号</th>
-              <th>材積 (m3)</th>
+              <th style={{ width: "15%" }}>枝番号</th>
+              <th style={{ width: "35%" }}>名称</th>
+              <th style={{ width: "30%" }}>材積 (m3)</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {draftRows.map((r) => {
-              const isIncomplete = (r.branch_no === "") !== (r.volume === "");
+              const branchOk = r.branch_no === "" || isBranchValid(r.branch_no);
+              const volumeOk = r.volume === "" || isVolumeValid(r.volume);
+              const hasInput = r.branch_no !== "" || r.volume !== "";
+              const complete = isBranchValid(r.branch_no) && isVolumeValid(r.volume);
+              const rowProblem = hasInput && !complete;
+              const nameForRow = isBranchValid(r.branch_no)
+                ? branchMap[Number(r.branch_no)] || ""
+                : "";
+
               return (
-                <tr key={r.key} className={isIncomplete ? "missing-row" : ""}>
+                <tr key={r.key} className={rowProblem ? "missing-row" : ""}>
                   <td>
-                    <select
+                    <input
                       ref={(el) => {
                         branchRefs.current[r.key] = el;
                       }}
-                      className={isIncomplete && r.branch_no === "" ? "invalid" : ""}
+                      className={!branchOk ? "invalid" : ""}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={2}
+                      placeholder="0-49"
                       value={r.branch_no}
                       onChange={(e) =>
-                        updateDraftRow(r.key, "branch_no", e.target.value)
+                        updateDraftRow(r.key, "branch_no", e.target.value.trim())
                       }
-                    >
-                      <option value="">選択してください</option>
-                      {branches.map((b) => (
-                        <option key={b.branch_no} value={b.branch_no}>
-                          {String(b.branch_no).padStart(2, "0")} {b.name}
-                        </option>
-                      ))}
-                    </select>
+                      onKeyDown={(e) => handleBranchKeyDown(r.key, e)}
+                    />
                   </td>
+                  <td className="muted">{nameForRow}</td>
                   <td>
                     <input
-                      className={isIncomplete && r.volume === "" ? "invalid" : ""}
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      placeholder="例: 1.234"
+                      ref={(el) => {
+                        volumeRefs.current[r.key] = el;
+                      }}
+                      className={!volumeOk ? "invalid" : ""}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="例: .333 → 0.333"
                       value={r.volume}
                       onChange={(e) =>
-                        updateDraftRow(r.key, "volume", e.target.value)
+                        updateDraftRow(r.key, "volume", e.target.value.trim())
                       }
+                      onKeyDown={(e) => handleVolumeKeyDown(r.key, e)}
                     />
                   </td>
                   <td>
@@ -281,12 +327,12 @@ export default function MarketDetailPage({ params }) {
           </button>
           {incompleteRows.length > 0 && (
             <span className="error-text">
-              片方だけ入力されている行が{incompleteRows.length}件あります
+              入力が揃っていない行が{incompleteRows.length}件あります
             </span>
           )}
         </div>
         <p className="muted" style={{ marginTop: 10 }}>
-          枝番号と材積を入力すると自動で次の行が追加されるので、連続して入力を続けられます。片方だけ入力された行は赤くハイライトされ、そのままでは保存できません。入力が終わったら「まとめて保存」を押してください。
+          枝番号(0〜49)を入力してEnterで材積欄へ、材積を入力してEnterで次の行へ移動します。材積は「.333」のように入力しても0.333として認識されます。片方だけ入力された行は赤くハイライトされ、保存できません。
         </p>
       </div>
 
