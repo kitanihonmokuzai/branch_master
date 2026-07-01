@@ -48,6 +48,8 @@ export default function MarketDetailPage({ params }) {
   const [savingBatch, setSavingBatch] = useState(false);
   const branchRefs = useRef({});
   const volumeRefs = useRef({});
+  const [entryFilter, setEntryFilter] = useState("");
+  const [showEntries, setShowEntries] = useState(false);
 
   const branchMap = useMemo(() => {
     const m = {};
@@ -208,6 +210,11 @@ export default function MarketDetailPage({ params }) {
     load();
   }
 
+  const filteredEntries =
+    entryFilter === ""
+      ? entries
+      : entries.filter((e) => e.branch_no === Number(entryFilter));
+
   const summary = useMemo(() => {
     const rows = [];
     for (let no = 0; no <= 49; no++) {
@@ -225,7 +232,7 @@ export default function MarketDetailPage({ params }) {
   const chartData = summary
     .filter((r) => r.total > 0)
     .map((r) => ({
-      label: `${String(r.branch_no).padStart(2, "0")}`,
+      label: `${String(r.branch_no).padStart(2, "0")} ${r.name}`,
       材積: Number(r.total.toFixed(3)),
     }));
 
@@ -348,37 +355,61 @@ export default function MarketDetailPage({ params }) {
         </p>
       </div>
 
-      <div className="panel">
-        <h2>入力明細（{entries.length}件）</h2>
+      <details className="panel">
+        <summary>入力明細を表示（{entries.length}件）</summary>
         {entries.length === 0 ? (
-          <p className="muted">まだ入力がありません。</p>
+          <p className="muted" style={{ marginTop: 12 }}>まだ入力がありません。</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>枝番号</th>
-                <th>名称</th>
-                <th>材積</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id}>
-                  <td>{String(e.branch_no).padStart(2, "0")}</td>
-                  <td>{branchMap[e.branch_no] || ""}</td>
-                  <td>{Number(e.volume).toFixed(3)}</td>
-                  <td>
-                    <button className="secondary" onClick={() => handleDelete(e.id)}>
-                      削除
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <div className="row" style={{ marginTop: 12 }}>
+              <div className="field">
+                <label>枝番号で絞り込み</label>
+                <select
+                  value={entryFilter}
+                  onChange={(e) => setEntryFilter(e.target.value)}
+                >
+                  <option value="">すべて表示</option>
+                  {branches.map((b) => (
+                    <option key={b.branch_no} value={b.branch_no}>
+                      {String(b.branch_no).padStart(2, "0")} {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {filteredEntries.length === 0 ? (
+              <p className="muted" style={{ marginTop: 12 }}>
+                該当する明細がありません。
+              </p>
+            ) : (
+              <table style={{ marginTop: 12 }}>
+                <thead>
+                  <tr>
+                    <th>枝番号</th>
+                    <th>名称</th>
+                    <th>材積</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEntries.map((e) => (
+                    <tr key={e.id}>
+                      <td>{String(e.branch_no).padStart(2, "0")}</td>
+                      <td>{branchMap[e.branch_no] || ""}</td>
+                      <td>{Number(e.volume).toFixed(3)}</td>
+                      <td>
+                        <button className="secondary" onClick={() => handleDelete(e.id)}>
+                          削除
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
-      </div>
+      </details>
 
       <div className="panel">
         <h2>枝番号別 集計（この回）</h2>
@@ -414,11 +445,11 @@ export default function MarketDetailPage({ params }) {
         {chartData.length === 0 ? (
           <p className="muted">グラフ表示するデータがありません。</p>
         ) : (
-          <div style={{ width: "100%", height: 320 }}>
+          <div style={{ width: "100%", height: 380 }}>
             <ResponsiveContainer>
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2ddd3" />
-                <XAxis dataKey="label" fontSize={12} />
+                <XAxis dataKey="label" fontSize={11} angle={-35} textAnchor="end" height={70} interval={0} />
                 <YAxis fontSize={12} />
                 <Tooltip />
                 <Bar dataKey="材積" fill="#7a5c3e" />
